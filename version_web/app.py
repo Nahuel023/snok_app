@@ -50,36 +50,50 @@ with tab1:
     col_izq, col_der = st.columns([1, 1])
     
     with col_izq:
-        # --- BLOQUE VISUALIZADOR 3D ---
+        # --- BLOQUE VISUALIZADOR 3D (CORREGIDO) ---
         st.subheader("📂 Visualización 3D")
         archivo_3d = st.file_uploader("Suelte su STL o 3MF aquí", type=["stl", "3mf"])
         
         if archivo_3d is not None:
             st.caption("Vista Previa (Gire con el mouse):")
             try:
+                # CORRECCIÓN AQUÍ: Usamos .read() para leer los bytes
                 # Si es STL
                 if archivo_3d.name.lower().endswith('.stl'):
-                    stl_from_file(archivo_3d, height=300, color="#3498db")
+                    # Reseteamos el puntero por seguridad y leemos los bytes
+                    archivo_3d.seek(0)
+                    bytes_data = archivo_3d.read()
+                    stl_from_file(bytes_data, height=300, color="#3498db")
                     
                 # Si es 3MF (Conversión en memoria)
                 elif archivo_3d.name.lower().endswith('.3mf'):
+                    # Reseteamos el puntero
+                    archivo_3d.seek(0)
                     with st.spinner("Procesando archivo 3MF..."):
+                        # Trimesh es inteligente y puede leer el objeto subido directo, 
+                        # pero le especificamos el tipo para ayudarle.
                         mesh = trimesh.load(archivo_3d, file_type='3mf')
+                        
+                        # Si es una escena (varios objetos), unirlos
                         if isinstance(mesh, trimesh.Scene):
                              mesh = mesh.dump(concatenate=True)
+                        
+                        # Exportar a STL en memoria
                         tmp_stl = io.BytesIO()
                         mesh.export(tmp_stl, file_type='stl')
+                        
+                        # Mostrar el STL temporal
                         stl_from_file(tmp_stl, height=300, color="#e67e22")
             except Exception as e:
                 st.error(f"Error visualizando: {e}")
         st.divider()
 
-        # --- DATOS Y MATERIAL (RESTITUÍDO) ---
+        # --- DATOS Y MATERIAL ---
         st.subheader("Datos Pieza")
         cli_cliente = st.text_input("Cliente")
         cli_modelo = st.text_input("Modelo")
         
-        # Lógica de selección de Stock (Vital para que funcione el cálculo)
+        # Lógica de selección de Stock
         lista_stock = ["--- Manual ---"]
         datos_stock = {} 
         
