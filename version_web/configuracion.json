@@ -1,0 +1,9 @@
+{
+    "configuracion": {
+        "precio_kwh": 180.0,
+        "consumo_kw": 0.25,
+        "precio_hora_diseno": 8500,
+        "margen_ganancia": 100,
+        "precio_desgaste_hora": 300
+    }
+}
