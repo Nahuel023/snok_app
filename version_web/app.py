@@ -3,23 +3,22 @@ import pandas as pd
 from datetime import datetime
 import json
 import os
+import io # Para manejar archivos en memoria
+import trimesh # Para leer 3MF
+from streamlit_stl import stl_from_file # El visor 3D
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión 3D Web", page_icon="🌐", layout="wide")
 
-# --- BLOQUE DE SEGURIDAD PARA LA NUBE (IMPORTANTE) ---
-# Esto permite que la app funcione en Streamlit Cloud sin subir el archivo credenciales.json
+# --- BLOQUE DE SEGURIDAD PARA LA NUBE ---
 if not os.path.exists("credenciales.json"):
-    # Si no está el archivo físico, buscamos en los secretos de Streamlit
     if "gcp_service_account" in st.secrets:
-        # Creamos el archivo temporalmente para que el backend lo pueda leer
         with open("credenciales.json", "w") as f:
             json.dump(dict(st.secrets["gcp_service_account"]), f)
     else:
-        # Si estamos en local y no hay archivo, avisamos (pero no rompemos si ya existe)
         pass
 
-# Importamos el backend DESPUÉS de asegurar que existen credenciales
+# Importamos el backend
 from backend import BackendGestor 
 
 # --- ESTILOS CSS ---
@@ -31,7 +30,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZAR BACKEND (Caché) ---
+# --- INICIALIZAR BACKEND ---
 if 'backend' not in st.session_state:
     st.session_state.backend = BackendGestor()
 
@@ -51,11 +50,36 @@ with tab1:
     col_izq, col_der = st.columns([1, 1])
     
     with col_izq:
+        # --- BLOQUE VISUALIZADOR 3D ---
+        st.subheader("📂 Visualización 3D")
+        archivo_3d = st.file_uploader("Suelte su STL o 3MF aquí", type=["stl", "3mf"])
+        
+        if archivo_3d is not None:
+            st.caption("Vista Previa (Gire con el mouse):")
+            try:
+                # Si es STL
+                if archivo_3d.name.lower().endswith('.stl'):
+                    stl_from_file(archivo_3d, height=300, color="#3498db")
+                    
+                # Si es 3MF (Conversión en memoria)
+                elif archivo_3d.name.lower().endswith('.3mf'):
+                    with st.spinner("Procesando archivo 3MF..."):
+                        mesh = trimesh.load(archivo_3d, file_type='3mf')
+                        if isinstance(mesh, trimesh.Scene):
+                             mesh = mesh.dump(concatenate=True)
+                        tmp_stl = io.BytesIO()
+                        mesh.export(tmp_stl, file_type='stl')
+                        stl_from_file(tmp_stl, height=300, color="#e67e22")
+            except Exception as e:
+                st.error(f"Error visualizando: {e}")
+        st.divider()
+
+        # --- DATOS Y MATERIAL (RESTITUÍDO) ---
         st.subheader("Datos Pieza")
         cli_cliente = st.text_input("Cliente")
         cli_modelo = st.text_input("Modelo")
         
-        # Cargar lista de stock
+        # Lógica de selección de Stock (Vital para que funcione el cálculo)
         lista_stock = ["--- Manual ---"]
         datos_stock = {} 
         
@@ -104,6 +128,7 @@ with tab1:
         use_diseno = st.checkbox("Diseño 3D")
         hs_diseno = st.number_input("Hs Diseño", disabled=not use_diseno) if use_diseno else 0
 
+    # --- CÁLCULO ---
     if st.button("CALCULAR 🧮", type="primary"):
         peso_real = peso * (1 + margen)
         costo_mat = (peso_real / 1000) * costo_repo
@@ -130,6 +155,7 @@ with tab1:
             "horas": horas, "min": minutos, "diseno": hs_diseno, "mat_nom": seleccion
         }
 
+    # --- GUARDAR ---
     if 'calc' in st.session_state:
         if st.button("💾 GUARDAR"):
             d = st.session_state.calc
