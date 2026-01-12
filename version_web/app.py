@@ -3,9 +3,10 @@ import pandas as pd
 from datetime import datetime
 import json
 import os
-import io # Para manejar archivos en memoria
-import trimesh # Para leer 3MF
-from streamlit_stl import stl_from_file # El visor 3D
+import io 
+import trimesh 
+import tempfile # <--- NUEVO: Para crear archivos temporales seguros
+from streamlit_stl import stl_from_file 
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión 3D Web", page_icon="🌐", layout="wide")
@@ -50,40 +51,37 @@ with tab1:
     col_izq, col_der = st.columns([1, 1])
     
     with col_izq:
-        # --- BLOQUE VISUALIZADOR 3D (CORREGIDO) ---
+        # --- BLOQUE VISUALIZADOR 3D (CORREGIDO DEFINITIVAMENTE) ---
         st.subheader("📂 Visualización 3D")
         archivo_3d = st.file_uploader("Suelte su STL o 3MF aquí", type=["stl", "3mf"])
         
         if archivo_3d is not None:
             st.caption("Vista Previa (Gire con el mouse):")
             try:
-                # CORRECCIÓN AQUÍ: Usamos .read() para leer los bytes
-                # Si es STL
-                if archivo_3d.name.lower().endswith('.stl'):
-                    # Reseteamos el puntero por seguridad y leemos los bytes
-                    archivo_3d.seek(0)
-                    bytes_data = archivo_3d.read()
-                    stl_from_file(bytes_data, height=300, color="#3498db")
+                # 1. Creamos un archivo temporal físico en el sistema
+                suffix = ".stl" # Siempre usaremos extensión .stl para el temp
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
                     
-                # Si es 3MF (Conversión en memoria)
-                elif archivo_3d.name.lower().endswith('.3mf'):
-                    # Reseteamos el puntero
-                    archivo_3d.seek(0)
-                    with st.spinner("Procesando archivo 3MF..."):
-                        # Trimesh es inteligente y puede leer el objeto subido directo, 
-                        # pero le especificamos el tipo para ayudarle.
-                        mesh = trimesh.load(archivo_3d, file_type='3mf')
+                    # CASO A: Es un STL
+                    if archivo_3d.name.lower().endswith('.stl'):
+                        tmp_file.write(archivo_3d.getvalue())
                         
-                        # Si es una escena (varios objetos), unirlos
-                        if isinstance(mesh, trimesh.Scene):
-                             mesh = mesh.dump(concatenate=True)
-                        
-                        # Exportar a STL en memoria
-                        tmp_stl = io.BytesIO()
-                        mesh.export(tmp_stl, file_type='stl')
-                        
-                        # Mostrar el STL temporal
-                        stl_from_file(tmp_stl, height=300, color="#e67e22")
+                    # CASO B: Es un 3MF (Convertimos y guardamos)
+                    elif archivo_3d.name.lower().endswith('.3mf'):
+                        with st.spinner("Convirtiendo 3MF a STL..."):
+                            archivo_3d.seek(0)
+                            mesh = trimesh.load(archivo_3d, file_type='3mf')
+                            if isinstance(mesh, trimesh.Scene):
+                                mesh = mesh.dump(concatenate=True)
+                            mesh.export(tmp_file.name)
+                
+                # 2. Le pasamos la RUTA DEL ARCHIVO (String) al visualizador
+                # Esto evita el error de "embedded null byte" porque ya no pasamos bytes crudos
+                stl_from_file(file_path=tmp_file.name, height=300, color="#3498db")
+                
+                # 3. Limpieza (Opcional, el sistema operativo limpia temps eventualmente)
+                # os.unlink(tmp_file.name) 
+
             except Exception as e:
                 st.error(f"Error visualizando: {e}")
         st.divider()
